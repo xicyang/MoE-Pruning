@@ -1,6 +1,6 @@
 # MoE Pruning and Evaluation
 
-Official implementation of MoE Pathfinder: Trajectory-driven Expert Pruning, containing two independent modules: pruning and evaluation.
+Official implementation of **MoE Pathfinder: Trajectory-driven Expert Pruning**, containing two independent modules: pruning and evaluation.
 
 ## Project Structure
 
