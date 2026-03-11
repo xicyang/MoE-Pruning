@@ -1,6 +1,6 @@
 # MoE Pruning and Evaluation
 
-A complete MoE (Mixture of Experts) model pruning and evaluation toolkit, containing two independent modules: pruning and evaluation.
+Official implementation of MoE Pathfinder: Trajectory-driven Expert Pruning, containing two independent modules: pruning and evaluation.
 
 ## Project Structure
 
