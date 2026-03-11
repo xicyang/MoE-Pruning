@@ -7,7 +7,7 @@
 <a id="中文版"></a>
 # 中文版
 
-**MoE Pathfinder: 轨迹驱动的专家剪枝 (Trajectory-driven Expert Pruning)** 的官方实现，包含两个独立的模块：剪枝（pruning）和评估（evaluation）。
+**MoE Pathfinder: Trajectory-driven Expert Pruning** 的官方实现，包含两个独立的模块：剪枝（pruning）和评估（evaluation）。
 
 ## 项目结构
 
