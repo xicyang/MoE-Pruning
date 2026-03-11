@@ -54,6 +54,14 @@ code/
 └── README.md                   # Main documentation
 ```
 
+## Important Preliminary Step
+This evaluation module relies on a modified lm_evalcomponent. Before running the evaluation, you must manually download​ the lm_evalfolder​ from the EleutherAI/lm-evaluation-harnessrepository and place it entirely within the following project path:
+
+```bash
+{Your_Project_Root}/evaluation/moe_eval/lm_eval/
+```
+Please ensure the downloaded lm_evalfolder contains core subdirectories and files such as __init__.py, evaluator.py, models/, etc. This replaces or supplements the corresponding modules in the standard lm-evallibrary to enable correct evaluation for pruned MoE models.
+
 ## Supported Models
 
 This toolkit supports MoE models with standard router-based architectures. It has been tested with:
