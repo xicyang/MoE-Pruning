@@ -1,4 +1,4 @@
-# MoE Pruning and Evaluation (MoE 剪枝与评估)
+# MoE Pathfinder: Trajectory-driven Expert Pruning
 
 [English](#english-version) | [中文](#中文版)
 
