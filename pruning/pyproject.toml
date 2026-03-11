@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "moe-prune"
+version = "1.0.0"
+description = "MoE model pruning pipeline for router-based architectures."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "moe-prune" }
+]
+dependencies = [
+  "accelerate>=0.34.0",
+  "datasets>=2.19.0",
+  "einops>=0.7.0",
+  "huggingface-hub>=0.24.0",
+  "numpy>=1.24.0",
+  "safetensors>=0.4.2",
+  "scikit-learn>=1.4.1",
+  "sentencepiece>=0.2.0",
+  "setuptools>=68.0.0",
+  "tqdm>=4.66.0",
+  "transformers>=4.44.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.5.0",
+  "pytest>=7.4.0"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["moe_prune"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project.scripts]
+moe-prune = "moe_prune.cli.main:main"
