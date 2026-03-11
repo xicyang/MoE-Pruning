@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "moe-eval"
+version = "1.0.0"
+description = "Evaluation tools for MoE models with gate.bias support."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "moe-eval" }
+]
+dependencies = [
+  "accelerate>=0.34.0",
+  "datasets>=2.19.0",
+  "einops>=0.7.0",
+  "huggingface-hub>=0.24.0",
+  "numpy>=1.24.0",
+  "safetensors>=0.4.2",
+  "sentencepiece>=0.2.0",
+  "setuptools>=68.0.0",
+  "tqdm>=4.66.0",
+  "transformers>=4.44.0",
+  # lm-evaluation-harness dependencies
+  "evaluate>=0.4.0",
+  "jsonlines",
+  "numexpr",
+  "peft>=0.2.0",
+  "pybind11>=2.6.2",
+  "pytablewriter",
+  "rouge-score>=0.0.4",
+  "sacrebleu>=1.5.0",
+  "scikit-learn>=0.24.1",
+  "sqlitedict",
+  "torch>=1.8",
+  "tqdm-multiprocess",
+  "zstandard",
+  "dill",
+  "word2number",
+  "more_itertools",
+]
+dev = [
+  "ruff>=0.5.0",
+  "pytest>=7.4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["moe_eval", "moe_eval.lm_eval"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+# required to include yaml files in pip installation
+[tool.hatch.build.targets.wheel.force-include]
+"moe_eval/lm_eval" = ["**/*.yaml", "**/tasks/**/*"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project.scripts]
+moe-eval = "moe_eval.cli.main:main"
