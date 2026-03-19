@@ -12,7 +12,6 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 @dataclass
 class ModelBundle:
-    """Container for model, tokenizer, and config."""
     model: AutoModelForCausalLM
     tokenizer: AutoTokenizer
     config: AutoConfig
@@ -30,7 +29,6 @@ def load_model_bundle(
     device_map: Optional[str] = "auto",
     use_flash_attention_2: bool = False,
 ) -> ModelBundle:
-    """Load model, tokenizer, and config."""
     model_path = Path(model_path)
     config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     torch_dtype = _resolve_dtype(dtype)
@@ -54,7 +52,6 @@ def load_model_bundle(
         attn_implementation="flash_attention_2" if use_flash_attention_2 else None,
     )
 
-    # Try fast tokenizer first, fallback to slow tokenizer if it fails
     try:
         tokenizer = AutoTokenizer.from_pretrained(
             model_path,
@@ -80,7 +77,6 @@ def load_model_bundle(
 
 
 def _resolve_dtype(dtype: str) -> torch.dtype:
-    """Resolve dtype string to torch.dtype."""
     mapping = {
         "float16": torch.float16,
         "fp16": torch.float16,

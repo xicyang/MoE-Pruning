@@ -1,4 +1,4 @@
-"""Frequency-based path search with per-layer outlier filtering (v4)."""
+"""Frequency-based path search with outlier filtering."""
 
 import json
 import math
@@ -17,13 +17,10 @@ logger = get_logger(__name__)
 
 @dataclass
 class PathSearchResult:
-    """Result of path search step."""
-
     mask_path: Path
 
 
 def percentile(sorted_values: List[float], pct: float) -> float:
-    """Compute percentile (0-1) for pre-sorted values."""
     if not sorted_values:
         raise ValueError("Cannot compute percentile of empty list")
     if pct <= 0:
@@ -40,7 +37,6 @@ def percentile(sorted_values: List[float], pct: float) -> float:
 
 
 def compute_iqr_bounds(values: List[float], multiplier: float) -> Optional[Tuple[float, float]]:
-    """Return (lower_bound, upper_bound) using Tukey IQR rule."""
     if len(values) < 4:
         return None
     sorted_vals = sorted(values)
@@ -56,8 +52,6 @@ def compute_iqr_bounds(values: List[float], multiplier: float) -> Optional[Tuple
 
 @dataclass
 class OutlierConfig:
-    """Configuration for the outlier detector."""
-
     loss_iqr_multiplier: float = 3
     norm_iqr_multiplier: float = 3
     min_values: int = 4
@@ -65,8 +59,6 @@ class OutlierConfig:
 
 @dataclass
 class LayerOutlierResult:
-    """Holds force-keep/remove decisions for a single layer."""
-
     layer_idx: int
     force_keep: Set[int] = field(default_factory=set)
     force_remove: Set[int] = field(default_factory=set)
@@ -76,8 +68,6 @@ class LayerOutlierResult:
 
 
 class LayerOutlierInspector:
-    """Detect outliers per layer for loss and expert norms."""
-
     def __init__(self, config: OutlierConfig):
         self.config = config
 
@@ -138,8 +128,6 @@ class PathEntry:
 
 
 class MoEGraph:
-    """Graph structure for MoE model with routers and experts."""
-
     def __init__(
         self,
         analysis_results: Dict,
@@ -148,8 +136,6 @@ class MoEGraph:
     ):
         self.analysis_results = analysis_results
         self.num_layers = len([k for k in analysis_results.keys() if k.startswith("layer_")])
-        # Dynamically determine num_experts from analysis results
-        # Try to get from first layer's expert_norms_mean or router_probs_mean
         if self.num_layers > 0:
             first_layer_key = f"layer_0"
             if first_layer_key in analysis_results:
@@ -192,7 +178,6 @@ class MoEGraph:
             router_probs = layer_data["router_probs_mean"]
             expert_norms = layer_data["expert_norms_mean"]
 
-            # 与 path_searchv4.py 保持一致：直接使用 router_probs，不归一化
             for expert_idx in range(self.num_experts):
                 if not self.is_expert_enabled(layer_idx, expert_idx):
                     continue
@@ -225,7 +210,6 @@ class MoEGraph:
             ]
 
             if enabled_experts:
-                # 与 path_searchv4.py 保持一致：直接计算 exp(-loss/tau)
                 exp_terms = []
                 for expert_idx in enabled_experts:
                     loss_value = layer_data["loss"][f"expert_{expert_idx}"]
@@ -259,7 +243,6 @@ class MoEGraph:
         return order
 
     def disable_experts(self, experts: Set[Tuple[int, int]]):
-        # 与 path_searchv4.py 保持一致：只更新 node_weights，不更新 edges
         newly_disabled = experts - self.disabled_experts
         self.disabled_experts.update(experts)
         for layer_idx, expert_idx in newly_disabled:
@@ -308,8 +291,6 @@ class MoEGraph:
 
 
 class TopKPathFinder:
-    """Top-k path finder allowing overlap, respecting disabled experts."""
-
     def __init__(self, graph: MoEGraph, k: int):
         self.graph = graph
         self.k = k
@@ -351,8 +332,6 @@ class TopKPathFinder:
                         if not self.graph.is_expert_enabled(layer_idx, expert_idx):
                             continue
                         node_weight = self.graph.node_weights[neighbor_u]
-                        # node_weight 已经通过 softmax 归一化到 [0, 1] 范围
-                        # 使用 log(weight + 1e-10) 是安全的，因为权重在合理范围内
                         log_node_weight = math.log(node_weight + 1e-10)
                         new_path_experts.add((layer_idx, expert_idx))
 
@@ -375,14 +354,10 @@ class TopKPathFinder:
 
 
 def select_top_paths(graph: MoEGraph, topk: int, unique_paths: bool) -> List[PathEntry]:
-    """Return top paths with optional uniqueness constraint."""
     if not unique_paths:
         finder = TopKPathFinder(graph, topk)
         return finder.find_top_k_paths()
     
-    # OLMoE 特化策略：
-    # 每次选出一条最优路径后，直接禁用该路径经过的所有专家，
-    # 确保后续路径不会重复选择这些专家，从而鼓励覆盖更多不同的专家。
     selected: List[PathEntry] = []
     for _ in range(topk):
         finder = TopKPathFinder(graph, 1)
@@ -392,7 +367,6 @@ def select_top_paths(graph: MoEGraph, topk: int, unique_paths: bool) -> List[Pat
         entry = best_path[0]
         selected.append(entry)
 
-        # 直接禁用本路径上的所有专家，避免后续路径重复选择
         if entry.path_experts:
             graph.disable_experts(entry.path_experts)
 
@@ -422,7 +396,6 @@ def preprocess_analysis_results(
     analysis_results: Dict,
     inspector: Optional[LayerOutlierInspector],
 ) -> Tuple[Dict, Set[Tuple[int, int]], Set[Tuple[int, int]], Dict[int, LayerOutlierResult]]:
-    """Preprocess analysis results with optional outlier detection."""
     import copy
 
     filtered = copy.deepcopy(analysis_results)
@@ -477,7 +450,6 @@ def run_single_sample(
     inspector: Optional[LayerOutlierInspector],
     unique_paths: bool = False,
 ):
-    """Run path search for a single sample."""
     filtered, force_keep, force_remove, details = preprocess_analysis_results(analysis_results, inspector)
 
     initial_disabled = force_keep | force_remove
@@ -510,7 +482,6 @@ def build_masks_from_keep_set(
 
 
 def collect_kept_experts_from_paths(paths: List[PathEntry]) -> Set[Tuple[int, int]]:
-    """Return the union of experts included in provided paths."""
     kept: Set[Tuple[int, int]] = set()
     for entry in paths:
         kept.update(entry.path_experts)
@@ -522,7 +493,6 @@ def union_keep_for_k(
     global_force_keep: Set[Tuple[int, int]],
     k: int,
 ) -> Set[Tuple[int, int]]:
-    """Return keep set when taking first-k paths from each sample."""
     union: Set[Tuple[int, int]] = set(global_force_keep)
     for sample_paths in per_sample_paths:
         take = min(k, len(sample_paths))
@@ -538,10 +508,6 @@ def fill_masks_to_target(
     num_layers: int,
     num_experts: int,
 ) -> Tuple[int, List[Tuple[int, int]]]:
-    """
-    Fill pruning masks to reach target_keep by flipping 0->1 (respecting force-remove).
-    Returns (new_total_keep, added_experts).
-    """
     current_keep = sum(sum(mask) for mask in masks.values())
     if current_keep >= target_keep:
         return current_keep, []
@@ -568,7 +534,6 @@ def fill_masks_to_target(
 
 
 def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResult:
-    """Run frequency-based path search."""
     logger.info(f"Starting path search with config: {config}")
 
     sample_files = discover_sample_files(input_dir, config.limit)
@@ -581,7 +546,7 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
         f"Algorithm: {algo_label}, target_keep={config.target_keep}, topk={config.topk}, tau={config.tau}"
     )
     if config.unique_paths:
-        logger.info("Unique path selection enabled (v2, experts will not repeat across paths).")
+        logger.info("Unique path selection enabled.")
         if getattr(config, "unique_path_mode", None):
             logger.info(f"Unique-path mode: {config.unique_path_mode}")
 
@@ -595,7 +560,7 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
             )
         )
     else:
-        logger.info("Outlier detection disabled; skipping auto keep/remove heuristics.")
+        logger.info("Outlier detection disabled.")
 
     layer_map_path = input_dir / "moe_layer_map.json"
     moe_layer_indices = None
@@ -644,17 +609,15 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
             representative_num_experts = graph.num_experts
 
         per_sample_all_keep = result["force_keep"].copy()
-        # 统计路径经过的专家的并集
         path_experts_union = collect_kept_experts_from_paths(result["top_k_paths"])
         per_sample_all_keep.update(path_experts_union)
-        # 路径专家并集 + force_keep 的并集
         paths_plus_force_keep = path_experts_union | result["force_keep"]
 
         summary = {
             "file": path.name,
             "num_paths": len(result["top_k_paths"]),
             "num_experts_kept": len(per_sample_all_keep),
-            "num_experts_in_paths_union": len(paths_plus_force_keep),  # 路径经过的专家 + force_keep 的并集数量
+            "num_experts_in_paths_union": len(paths_plus_force_keep),
             "auto_keep": len(result["force_keep"]),
             "auto_remove": len(result["force_remove"]),
         }
@@ -664,7 +627,7 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
         logger.info(f"  Auto-remove experts: {summary['auto_remove']}")
         logger.info(f"  Experts in paths union: {len(path_experts_union)}")
         logger.info(f"  Paths union + force_keep: {summary['num_experts_in_paths_union']}")
-        logger.info(f"  Kept experts (force_keep + topk paths union): {len(per_sample_all_keep)}")
+        logger.info(f"  Kept experts: {len(per_sample_all_keep)}")
         if config.enable_outlier_detection:
             logger.info("  Outlier summary:")
             logger.info(format_outlier_summary(result["outlier_details"]))
@@ -690,13 +653,10 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
     merged_masks: Dict[str, List[int]]
     total_keep = 0
 
-    # 当 unique_paths=True 时，支持两种模式：
-    # - adaptive_unique=True: 自适应 unique-path 聚合（当前 DeepSeek/OLMoE 默认）
-    # - adaptive_unique=False: Mixtral 样式的频次排序，但路径仍然唯一
     if config.unique_paths and getattr(config, "adaptive_unique", True):
         version_label = "v7_unique_adaptive"
         algo_label = "freq_rank_unique_adaptive"
-        logger.info("Running adaptive unique-path aggregation (path_searchv3 style).")
+        logger.info("Running adaptive unique-path aggregation.")
 
         keep_stats: List[Tuple[int, int]] = []
         union_cache: Dict[int, Set[Tuple[int, int]]] = {}
@@ -748,7 +708,6 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
         final_keep_set = set(selected_keep_set)
 
         fill_added: List[Tuple[int, int]] = []
-        # 先构建初始 masks
         merged_masks = build_masks_from_keep_set(
             final_keep_set, representative_num_layers, representative_num_experts
         )
@@ -766,7 +725,6 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
                     f"Filled {len(fill_added)} additional experts to reach target_keep={config.target_keep}."
                 )
                 final_keep_set.update(fill_added)
-                # 重新构建 masks，包含 fill_added 的专家
                 merged_masks = build_masks_from_keep_set(
                     final_keep_set, representative_num_layers, representative_num_experts
                 )
@@ -785,8 +743,6 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
             "fill_added_experts": zero_freq_kept,
         }
     else:
-        # 频次排序模式（固定 topk）。对于 DeepSeek/OLMoE + unique_paths=True，
-        # 这里依然使用不重复路径（由 select_top_paths 控制），只是聚合方式改为频次统计。
         version_label = (
             "v6_freq_rank_unique_fixed" if config.unique_paths else "v6_freq_rank"
         )
@@ -810,25 +766,20 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
         logger.info("=" * 80)
         logger.info("Path Search Expert Count Comparison")
         logger.info("=" * 80)
-        logger.info(f"Total experts visited by paths (paths union): {len(visited_experts)}")
+        logger.info(f"Total experts visited by paths: {len(visited_experts)}")
         logger.info(f"Global force-keep experts: {len(global_force_keep)}")
         logger.info(f"Path experts + force-keep experts total: {len(paths_plus_force_keep_global)}")
-        logger.info(f"Target keep experts (target_keep): {config.target_keep}")
+        logger.info(f"Target keep experts: {config.target_keep}")
         logger.info("")
 
         if len(paths_plus_force_keep_global) >= config.target_keep:
             logger.info(
-                f"✓ Path experts total ({len(paths_plus_force_keep_global)}) >= target keep ({config.target_keep})"
+                f"Path experts total ({len(paths_plus_force_keep_global)}) >= target keep ({config.target_keep})"
             )
-            logger.info("  Sufficient experts from paths to reach target")
         else:
             logger.warning(
-                f"⚠ Path experts total ({len(paths_plus_force_keep_global)}) < target keep ({config.target_keep})"
+                f"Path experts total ({len(paths_plus_force_keep_global)}) < target keep ({config.target_keep})"
             )
-            logger.warning(
-                f"  Insufficient path experts, will keep all path experts ({len(paths_plus_force_keep_global)} total)"
-            )
-        logger.info("=" * 80)
         logger.info("")
 
         base_keep: Set[Tuple[int, int]] = set(global_force_keep)
@@ -875,7 +826,7 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
         total_keep = sum(sum(mask) for mask in merged_masks.values())
         visited_experts_count = len(visited_experts)
         
-        # 验证专家保留逻辑：确保 final_keep_set 中的所有专家都在 masks 中被标记为保留
+        # Verification
         verification_passed = True
         missing_experts = []
         for layer_idx in range(representative_num_layers):
@@ -891,13 +842,14 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
             logger.error(
                 f"Expert retention verification failed! Found {len(missing_experts)} experts that should be kept but are not marked in masks:"
             )
-            for layer_idx, expert_idx in missing_experts[:10]:  # Show only first 10
+            for layer_idx, expert_idx in missing_experts[:10]:
                 logger.error(f"  layer_{layer_idx}, expert_{expert_idx}")
             if len(missing_experts) > 10:
                 logger.error(f"  ... and {len(missing_experts) - 10} more experts")
-            raise RuntimeError("Expert retention verification failed! Please check build_masks_from_keep_set function.")
+            raise RuntimeError("Expert retention verification failed!")
         else:
-            logger.info(f"✓ Expert retention verification passed: all {len(final_keep_set)} selected experts are correctly marked as kept in masks")
+            logger.info(f"Expert retention verification passed: all {len(final_keep_set)} selected experts are correctly marked as kept in masks")
+        
         zero_freq_kept = [
             (layer_idx, expert_idx)
             for layer_idx, expert_idx in sorted(final_keep_set)
@@ -911,7 +863,6 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
         prune_indices = [idx for idx, bit in enumerate(mask) if bit == 0]
         experts_to_prune[layer_key] = prune_indices
 
-    # 标记不同 unique_paths 策略，方便在文件名/JSON 中区分 DeepSeek 的两种模式
     mode_suffix = ""
     unique_mode_value = None
     if config.unique_paths:
@@ -957,8 +908,6 @@ def run_path_search(input_dir: Path, config: PathSearchConfig) -> PathSearchResu
     else:
         output_suffix = "freq_rank"
     
-    # 检查是否是合并模式（通过检查输入目录名或样本文件数量）
-    # 如果只有一个样本文件，可能是合并模式，但为了更准确，我们检查目录名
     is_merged_mode = "_merged" in str(input_dir)
     merged_suffix = "_merged" if is_merged_mode else ""
 

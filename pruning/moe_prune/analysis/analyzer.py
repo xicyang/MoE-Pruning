@@ -1,4 +1,4 @@
-"""Expert analysis using k-means clustering and calibration data."""
+"""Expert analysis module."""
 
 import json
 import logging
@@ -27,14 +27,11 @@ logger = get_logger(__name__)
 
 @dataclass
 class AnalysisResult:
-    """Result of analysis step."""
-
     output_dir: Path
     model_name: str
 
 
 def build_hashed_bow_features(tokenized_texts: List[List[int]], hash_dim: int = 1024) -> np.ndarray:
-    """Map token sequences to fixed-dimension hash bag-of-words vectors."""
     features = np.zeros((len(tokenized_texts), hash_dim), dtype=np.float32)
     for i, ids in enumerate(tokenized_texts):
         for tid in ids:
@@ -49,13 +46,12 @@ def build_hashed_bow_features(tokenized_texts: List[List[int]], hash_dim: int = 
 def kmeans(
     features: np.ndarray, k: int, seed: int = 42, max_iters: int = 100, tol: float = 1e-4
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Simple k-means implementation."""
     assert features.ndim == 2
     n, d = features.shape
     rng = np.random.RandomState(seed)
     assert k <= n, "k must be <= n"
 
-    # k-means++ initialization
+    # k-means++ init
     centers = np.empty((k, d), dtype=np.float32)
     idx0 = rng.randint(0, n)
     centers[0] = features[idx0]
@@ -93,7 +89,6 @@ def kmeans(
 def select_n_per_cluster(
     labels: np.ndarray, features: np.ndarray, centers: np.ndarray, n_s: int
 ) -> List[List[int]]:
-    """Select n_s samples closest to centroid per cluster."""
     k = centers.shape[0]
     selected: List[List[int]] = []
     for ci in range(k):
@@ -118,7 +113,6 @@ def generate_answer(
     top_p: float = 0.9,
     use_cache: bool = True,
 ) -> str:
-    """Generate answer for a question using the model."""
     inputs = tokenizer(question, return_tensors="pt", add_special_tokens=True)
     device = next(model.parameters()).device
     inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -146,7 +140,6 @@ def concatenate_samples(
     max_block_size: int,
     eos_token_id: int | None = None,
 ) -> Dict[str, torch.Tensor]:
-    """Concatenate multiple text samples into one large sample."""
     if eos_token_id is None:
         eos_token_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else tokenizer.pad_token_id
 
@@ -189,7 +182,6 @@ def build_dataset_kmeans_samples(
     seed: int,
     use_cache: bool = True,
 ) -> List[Dict[str, torch.Tensor]]:
-    """Build k-means clustered samples from dataset."""
     set_seed(seed)
 
     raw_items = load_multi_domain_datasets(
@@ -221,7 +213,7 @@ def build_dataset_kmeans_samples(
     centers, labels = kmeans(feats, k=k, seed=seed)
     chosen_indices_per_cluster = select_n_per_cluster(labels, feats, centers, n_s=n_s)
 
-    logger.info(f"Starting to generate calibration data for {len(chosen_indices_per_cluster)} clusters...")
+    logger.info(f"Generating calibration data for {len(chosen_indices_per_cluster)} clusters...")
 
     samples: List[Dict[str, torch.Tensor]] = []
 
@@ -262,7 +254,6 @@ def build_dataset_kmeans_samples(
 
 
 def run_analysis(config: AnalysisConfig) -> AnalysisResult:
-    """Run expert analysis."""
     logger.info(f"Starting analysis with config: {config}")
 
     model_path = Path(config.model_path)
@@ -274,7 +265,6 @@ def run_analysis(config: AnalysisConfig) -> AnalysisResult:
     save_path.mkdir(parents=True, exist_ok=True)
     set_seed(config.seed)
 
-    # Force max_block_size to 2048
     max_block_size = min(config.max_block_size, 2048)
 
     logger.info("Loading model and tokenizer...")
@@ -292,7 +282,7 @@ def run_analysis(config: AnalysisConfig) -> AnalysisResult:
     total_layers = len(model.model.layers)
     logger.info(f"Total transformer layers: {total_layers}")
 
-    # Identify MoE layers and wrap them
+    # Wrap MoE layers
     wrapped_layers: Dict[int, ExpertAnalyzerWrapper] = {}
     moe_layer_indices: List[int] = []
     for layer_idx in range(total_layers):
@@ -335,7 +325,7 @@ def run_analysis(config: AnalysisConfig) -> AnalysisResult:
         json.dump(layer_map, f, indent=2, ensure_ascii=False)
     logger.info(f"Saved MoE layer map to {mapping_path}")
 
-    # Build k samples (each concatenated from n_s sub-samples)
+    # Build samples
     logger.info(f"Building representative samples from {config.dataset.upper()} + k-means...")
     samples = build_dataset_kmeans_samples(
         tokenizer=tokenizer,
@@ -354,15 +344,13 @@ def run_analysis(config: AnalysisConfig) -> AnalysisResult:
     device = model.model.embed_tokens.weight.device
     logger.info(f"Input device: {device}")
 
-    # Forward pass for each sample and save JSON
+    # Forward pass for each sample
     with torch.inference_mode():
         for sample_idx, sample in enumerate(tqdm(samples, desc="Processing samples")):
-            # Clear and enable recording
             for logical_idx in range(len(wrapped_layers)):
                 wrapped_layers[logical_idx].enable_recording = True
                 wrapped_layers[logical_idx].clear_records()
 
-            # Direct forward for Mixtral models
             sample_on_device = {}
             for k, v in sample.items():
                 if isinstance(v, torch.Tensor):
@@ -373,7 +361,7 @@ def run_analysis(config: AnalysisConfig) -> AnalysisResult:
             _ = model(**sample_on_device)
             torch.cuda.empty_cache()
 
-            # Compute and export results for this sample
+            # Compute expert loss
             per_sample_results: Dict[int, Dict[str, Any]] = {}
             for logical_idx, actual_layer_idx in enumerate(moe_layer_indices):
                 wrapped = wrapped_layers[logical_idx]
@@ -402,7 +390,7 @@ def run_analysis(config: AnalysisConfig) -> AnalysisResult:
                 finally:
                     torch.cuda.empty_cache()
 
-            # Save this sample's JSON
+            # Save JSON
             json_results: Dict[str, Any] = {}
             for logical_idx, layer_data in per_sample_results.items():
                 json_results[f"layer_{logical_idx}"] = {

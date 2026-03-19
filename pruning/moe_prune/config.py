@@ -7,21 +7,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Default paths (can be configured via environment variables)
-# Use current directory as default, or set via MOE_DATA_ROOT environment variable
 DATA_ROOT = Path(os.getenv("MOE_DATA_ROOT", "."))
 RESULT_BASE = Path(os.getenv("MOE_RESULT_BASE", str(DATA_ROOT / "pruneresult")))
 MODEL_BASE = Path(os.getenv("MOE_MODEL_BASE", str(DATA_ROOT / "prunemodel")))
 
-# Calibration datasets
 CALIBRATION_DATASETS = ("arc", "winogrande", "medqa", "mmlu", "gsm8k", "hellaswag")
 
 
-# Dataset paths (can be configured via environment variables)
-# Users should set these via environment variables or provide full paths
-# Example: export MOE_DATASET_MMLU=/path/to/mmlu
 def _get_dataset_path(dataset_name: str, default_subpath: str) -> Path:
-    """Get dataset path from environment variable or use default relative path."""
     env_key = f"MOE_DATASET_{dataset_name.upper()}"
     if env_key in os.environ:
         return Path(os.environ[env_key])
@@ -36,11 +29,8 @@ DATASET_PATHS: Dict[str, Path] = {
     "gsm8k": _get_dataset_path("gsm8k", "datasets/gsm8k/main"),
 }
 
-# Model aliases (can be configured via environment variables)
-# Users should set these via environment variables or provide full paths
-# Example: export MOE_MODEL_YOUR_MODEL=/path/to/your-model
+
 def _get_model_alias(alias_name: str, default_subpath: str) -> Path:
-    """Get model path from environment variable or use default relative path."""
     env_key = f"MOE_MODEL_{alias_name.upper().replace('-', '_').replace('@', '')}"
     if env_key in os.environ:
         return Path(os.environ[env_key])
@@ -56,7 +46,6 @@ MODEL_ALIASES: Dict[str, Path] = {
 
 @dataclass
 class AnalysisConfig:
-    """Configuration for expert analysis step."""
     model_path: Path
     output_base: Path
     dataset: str
@@ -71,12 +60,11 @@ class AnalysisConfig:
     dtype: str = "bfloat16"
     cuda_devices: str = "0,1,2,3"
     extra_metadata: Dict[str, str] = field(default_factory=dict)
-    merge_all_samples: bool = False  # Whether to merge all representative samples into one sample
+    merge_all_samples: bool = False
 
 
 @dataclass
 class PathSearchConfig:
-    """Configuration for path search step."""
     target_keep: int
     topk: int
     limit: int
@@ -90,7 +78,6 @@ class PathSearchConfig:
 
 @dataclass
 class PruningConfig:
-    """Configuration for pruning step."""
     output_base: Path
     n_s: int
     verify: bool = True
@@ -99,7 +86,6 @@ class PruningConfig:
 
 @dataclass
 class WorkflowPaths:
-    """Paths for workflow outputs."""
     analysis_dir: Path
     pruned_model_dir: Path
 
@@ -111,14 +97,6 @@ class WorkflowPaths:
         result_base: Path | None = None,
         model_base: Path | None = None,
     ) -> "WorkflowPaths":
-        """Derive workflow paths.
-        
-        Args:
-            model_name: Name of the model
-            dataset: Name of the dataset
-            result_base: Base directory for analysis results (default: RESULT_BASE)
-            model_base: Base directory for pruned models (default: MODEL_BASE)
-        """
         result_base = result_base or RESULT_BASE
         model_base = model_base or MODEL_BASE
         analysis_dir = result_base / model_name / dataset / "analyze"
@@ -129,7 +107,6 @@ class WorkflowPaths:
 
 
 def resolve_model_path(identifier: str | Path) -> Path:
-    """Resolve model path from alias or literal path."""
     if isinstance(identifier, Path):
         return identifier
     normalized = identifier.strip()
@@ -141,14 +118,6 @@ def resolve_model_path(identifier: str | Path) -> Path:
 
 
 def normalize_analysis_limit(user_value: int | None) -> int | None:
-    """
-    Interpret user-provided analysis sample limits.
-
-    Returns:
-        - None when user passes 0 or negative value (meaning "no limit").
-        - The original positive integer for explicit caps.
-        - Default limit when user does not specify.
-    """
     DEFAULT_ANALYSIS_LIMIT = 0
     if user_value is None:
         return DEFAULT_ANALYSIS_LIMIT

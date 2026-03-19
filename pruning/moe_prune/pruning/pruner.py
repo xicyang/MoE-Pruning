@@ -1,4 +1,4 @@
-"""Pruning: Zero out pruned experts and disable router routing."""
+"""Pruning: Zero out pruned experts."""
 
 import json
 import shutil
@@ -18,7 +18,6 @@ logger = get_logger(__name__)
 
 
 def get_num_experts(config) -> int:
-    """Get number of experts from model config (Mixtral-specific)."""
     if hasattr(config, "num_local_experts") and config.num_local_experts is not None:
         return config.num_local_experts
     if hasattr(config, "num_experts") and config.num_experts is not None:
@@ -27,7 +26,6 @@ def get_num_experts(config) -> int:
 
 
 def get_moe_block(layer) -> torch.nn.Module:
-    """Get MoE block from layer (Mixtral uses block_sparse_moe)."""
     if hasattr(layer, "block_sparse_moe"):
         return layer.block_sparse_moe
     if hasattr(layer, "mlp"):
@@ -36,7 +34,6 @@ def get_moe_block(layer) -> torch.nn.Module:
 
 
 def detect_moe_layers(model: AutoModelForCausalLM) -> List[int]:
-    """Detect MoE layers in the model."""
     moe_layers: List[int] = []
     for idx, layer in enumerate(model.model.layers):
         try:
@@ -51,13 +48,10 @@ def detect_moe_layers(model: AutoModelForCausalLM) -> List[int]:
 
 @dataclass
 class PruningResult:
-    """Result of pruning step."""
-
     pruned_model_dir: Path
 
 
 def load_pruning_mask(mask_path: Path) -> Dict:
-    """Load pruning mask."""
     logger.info(f"Loading pruning mask from {mask_path}")
     with open(mask_path, "r") as f:
         mask_data = json.load(f)
@@ -86,8 +80,7 @@ def zero_out_expert_weights_and_router(
     router_logit_value: float = -1e20,
     moe_layer_indices: List[int] | None = None,
 ) -> AutoModelForCausalLM:
-    """Zero out pruned expert weights and disable router routing."""
-    logger.info("Starting to zero out pruned experts and disable router routing...")
+    logger.info("Zeroing out pruned experts and disabling router routing...")
     logger.info(f"  Router logit value for pruned experts: {router_logit_value}")
 
     num_layers = len(model.model.layers)
@@ -106,7 +99,7 @@ def zero_out_expert_weights_and_router(
         experts_to_prune = [i for i, m in enumerate(mask) if m == 0]
         experts_to_keep = [i for i, m in enumerate(mask) if m == 1]
 
-        # Zero out expert weights (Mixtral structure: w1, w2, w3)
+        # Zero out expert weights
         for expert_idx in experts_to_prune:
             expert = moe_block.experts[expert_idx]
             with torch.no_grad():
@@ -117,7 +110,7 @@ def zero_out_expert_weights_and_router(
                 if hasattr(expert, "w3"):
                     expert.w3.weight.zero_()
 
-        # Modify router to disable routing to pruned experts
+        # Disable router routing
         with torch.no_grad():
             gate_bias: torch.nn.Parameter | None = getattr(moe_block.gate, "bias", None)
             if gate_bias is None:
@@ -136,7 +129,7 @@ def zero_out_expert_weights_and_router(
                 if gate_bias is not None:
                     gate_bias.data[expert_idx] = float(router_logit_value)
 
-    logger.info("✓ All pruned experts' weights zeroed and router routing disabled")
+    logger.info("All pruned experts zeroed and router routing disabled")
     return model
 
 
@@ -147,7 +140,6 @@ def verify_pruning(
     test_input_size: int = 128,
     moe_layer_indices: List[int] | None = None,
 ) -> bool:
-    """Verify pruning was successful."""
     logger.info("Verifying pruning...")
 
     num_layers = len(model.model.layers)
@@ -172,7 +164,6 @@ def verify_pruning(
         for expert_idx in experts_to_prune:
             expert = moe_block.experts[expert_idx]
 
-            # Check expert weights (Mixtral structure)
             w1_is_zero = torch.all(expert.w1.weight == 0).item()
             w2_is_zero = torch.all(expert.w2.weight == 0).item()
             w3_is_zero = torch.all(expert.w3.weight == 0).item()
@@ -180,7 +171,6 @@ def verify_pruning(
 
             gate_weight_is_zero = torch.all(moe_block.gate.weight[expert_idx, :] == 0).item()
 
-            # Check bias only if it exists
             bias_matches = True
             gate_bias: torch.nn.Parameter | None = getattr(moe_block.gate, "bias", None)
             if gate_bias is not None:
@@ -202,7 +192,6 @@ def verify_pruning(
                 device=moe_block.gate.weight.device,
             )
 
-            # Calculate router logits with or without bias
             router_logits = torch.matmul(test_input, moe_block.gate.weight.t())
             gate_bias = getattr(moe_block.gate, "bias", None)
             if gate_bias is not None:
@@ -215,20 +204,18 @@ def verify_pruning(
                 all_correct = False
 
     if all_correct:
-        logger.info("✓ Verification passed: all pruned experts are properly zeroed and router routing disabled")
+        logger.info("Verification passed: all pruned experts properly zeroed")
     else:
-        logger.error("✗ Verification failed: some experts not properly pruned")
+        logger.error("Verification failed: some experts not properly pruned")
 
     return all_correct
 
 
 def calculate_model_size(model: AutoModelForCausalLM) -> Dict:
-    """Calculate model size (parameter count)."""
     total_params = 0
     non_zero_params = 0
 
     for p in model.parameters():
-        # Skip parameters on meta device (offloaded to disk)
         if p.device.type == "meta":
             continue
 
@@ -262,12 +249,9 @@ def calculate_model_size(model: AutoModelForCausalLM) -> Dict:
 
 
 def save_pruning_info(save_path: Path, mask_data: Dict, model_size_info: Dict, router_logit_value: float):
-    """Save pruning information."""
     info = {
         "pruning_method": "zero_out",
-        "description": "Pruned experts are zeroed out and router routing is disabled. "
-        "Router logits for pruned experts are set to extreme negative values "
-        "to ensure softmax probability is 0.",
+        "description": "Pruned experts zeroed, router routing disabled.",
         "router_logit_value": router_logit_value,
         "model_size": model_size_info,
         "pruning_masks": mask_data["pruning_masks"],
@@ -286,9 +270,8 @@ def apply_pruning_mask(
     mask_path: Path,
     config: PruningConfig,
 ) -> PruningResult:
-    """Apply pruning mask to model."""
     logger.info("=" * 80)
-    logger.info("Pruning: Zero-out Method with Router Routing Disabled")
+    logger.info("Pruning: Zero-out Method")
     logger.info("=" * 80)
     logger.info(f"Model path: {model_path}")
     logger.info(f"Mask path: {mask_path}")
@@ -313,7 +296,7 @@ def apply_pruning_mask(
 
     original_size = calculate_model_size(model)
 
-    # Get MoE layer indices from mask or detect them
+    # Get MoE layer indices
     mask_moe_layers = mask_data.get("moe_layer_indices")
     detected_moe_layers = detect_moe_layers(model)
     if mask_moe_layers:
@@ -326,7 +309,7 @@ def apply_pruning_mask(
             )
     else:
         moe_layer_indices = detected_moe_layers
-        logger.info("Mask does not provide moe_layer_indices, using auto-detected MoE layer indices: %s", moe_layer_indices)
+        logger.info("Mask does not provide moe_layer_indices, using auto-detected: %s", moe_layer_indices)
         if len(moe_layer_indices) != len(mask_data["pruning_masks"]):
             logger.warning(
                 "Auto-detected MoE layer count (%d) differs from pruning_masks layers (%d), truncating to mask layer count.",
@@ -360,7 +343,7 @@ def apply_pruning_mask(
 
     save_pruning_info(save_path, mask_data, pruned_size, config.router_logit_value)
 
-    logger.info("✓ Pruning complete!")
-    logger.info(f"✓ Pruned model saved to: {save_path}")
+    logger.info("Pruning complete!")
+    logger.info(f"Pruned model saved to: {save_path}")
 
     return PruningResult(pruned_model_dir=save_path)

@@ -1,4 +1,4 @@
-"""Frequency-rank workflow for Mixtral pruning."""
+"""Freq-rank workflow for Mixtral pruning."""
 
 from pathlib import Path
 from typing import List
@@ -32,38 +32,10 @@ def run_freq_rank_workflow(
     output_base: Path | None = None,
     pruned_model_dir: Path | None = None,
 ) -> None:
-    """
-    Frequency-ranking workflow for MoE model pruning.
-
-    Runs the pruning pipeline: analysis, path search, and pruning.
-    n_S is fixed to 1.
-
-    This function does NOT include evaluation. Use the evaluation module separately.
-
-    Args:
-        model_path: Path to the MoE model or model alias
-        calibration_datasets: Datasets to use for calibration
-        cuda_devices: CUDA devices to use
-        analysis_k: Number of clusters for k-means
-        target_keep: Target number of experts to keep per layer
-        path_topk: Number of top paths per sample
-        path_limit: Maximum number of samples for path search
-        analysis_limit: Limit on analysis samples
-        merge_all_samples: Whether to merge all representative samples into one sample
-        output_base: Base directory for analysis results (default: from config)
-        pruned_model_dir: Directory to save pruned models (default: from config).
-                         If specified, will be used directly without appending model_name/dataset
-    """
-    model_path = resolve_model_path(model_path)
-    model_name = model_path.name
-
-    # n_S is fixed to 1
     n_s = 1
 
     for dataset in calibration_datasets:
-        # If pruned_model_dir is specified, use it directly; otherwise derive from config
         if pruned_model_dir is not None:
-            # Use the provided directory directly
             pruned_dir = pruned_model_dir
             pruned_dir.mkdir(parents=True, exist_ok=True)
             paths = WorkflowPaths(
@@ -71,15 +43,14 @@ def run_freq_rank_workflow(
                 pruned_model_dir=pruned_dir,
             )
         else:
-            # Use default derivation with optional output_base override
             paths = WorkflowPaths.derive(model_name, dataset, result_base=output_base)
 
         logger.info(
             f"freq-rank workflow: model={model_name} dataset={dataset} n_S={n_s}"
         )
 
-        # Step 1: Analysis
-        logger.info("Step 1: Analysis (expert analysis with k-means clustering)")
+        # Analysis
+        logger.info("Step 1: Analysis")
         analysis = run_analysis(
             AnalysisConfig(
                 model_path=model_path,
@@ -96,8 +67,8 @@ def run_freq_rank_workflow(
             )
         )
 
-        # Step 2: Path search
-        logger.info("Step 2: Path Search (frequency-based path search)")
+        # Path search
+        logger.info("Step 2: Path Search")
         path_result = run_path_search(
             analysis.output_dir,
             config=PathSearchConfig(
@@ -107,8 +78,8 @@ def run_freq_rank_workflow(
             ),
         )
 
-        # Step 3: Pruning
-        logger.info("Step 3: Pruning (zero out pruned experts)")
+        # Pruning
+        logger.info("Step 3: Pruning")
         prune_result = apply_pruning_mask(
             model_path=model_path,
             mask_path=path_result.mask_path,
@@ -150,7 +121,6 @@ def _write_experiment_config(
     path_topk: int,
     path_limit: int,
 ) -> None:
-    """Write experiment configuration file."""
     content = f"""实验配置 (freq-rank, n_S={n_s}, 数据集={dataset})
 ==================
 原始模型: {model_name}

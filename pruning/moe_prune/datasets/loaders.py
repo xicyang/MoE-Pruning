@@ -23,23 +23,6 @@ def load_multi_domain_datasets(
     gsm8k_path: str | Path | None = None,
     split: str = "train",
 ) -> List[Dict[str, Any]]:
-    """
-    Load data from specified dataset and format uniformly.
-
-    Args:
-        dataset_to_load: Dataset name: 'mmlu', 'arc', 'medqa', 'winogrande', 'hellaswag', 'gsm8k'
-        mmlu_path: MMLU dataset path
-        arc_path: ARC-Challenge dataset path
-        medqa_path: MedQA-USMLE dataset path
-        winogrande_path: Winogrande dataset path
-        hellaswag_path: HellaSwag dataset path
-        gsm8k_path: GSM8K dataset path
-        split: Dataset split (train/validation/test)
-
-    Returns:
-        Formatted data list, each element contains 'question' and 'answer' fields
-    """
-    # Use default paths from config if not provided
     if mmlu_path is None:
         mmlu_path = str(DATASET_PATHS["mmlu"])
     if arc_path is None:
@@ -59,7 +42,6 @@ def load_multi_domain_datasets(
     if dataset_to_load not in valid_datasets:
         raise ValueError(f"Invalid dataset name: {dataset_to_load}. Valid: {valid_datasets}")
 
-    # Load MMLU
     if dataset_to_load == "mmlu":
         try:
             mmlu_split_name = "auxiliary_train" if split == "train" else split
@@ -104,7 +86,6 @@ def load_multi_domain_datasets(
         except Exception as e:
             logger.error(f"Failed to load MMLU: {e}", exc_info=True)
 
-    # Load ARC
     if dataset_to_load == "arc":
         try:
             parquet_file = os.path.join(arc_path, f"{split}-00000-of-00001.parquet")
@@ -134,7 +115,6 @@ def load_multi_domain_datasets(
         except Exception as e:
             logger.error(f"Failed to load ARC: {e}", exc_info=True)
 
-    # Load MedQA
     if dataset_to_load == "medqa":
         try:
             jsonl_file = os.path.join(medqa_path, f"{split}.jsonl")
@@ -161,7 +141,6 @@ def load_multi_domain_datasets(
         except Exception as e:
             logger.error(f"Failed to load MedQA: {e}", exc_info=True)
 
-    # Load Winogrande
     if dataset_to_load == "winogrande":
         try:
             parquet_file = os.path.join(winogrande_path, f"{split}-00000-of-00001.parquet")
@@ -184,7 +163,6 @@ def load_multi_domain_datasets(
         except Exception as e:
             logger.error(f"Failed to load Winogrande: {e}", exc_info=True)
 
-    # Load HellaSwag
     if dataset_to_load == "hellaswag":
         try:
             parquet_file = os.path.join(hellaswag_path, f"{split}-00000-of-00001.parquet")
@@ -205,7 +183,6 @@ def load_multi_domain_datasets(
         except Exception as e:
             logger.error(f"Failed to load HellaSwag: {e}", exc_info=True)
 
-    # Load GSM8K
     if dataset_to_load == "gsm8k":
         try:
             parquet_file = os.path.join(gsm8k_path, f"{split}-00000-of-00001.parquet")
@@ -235,7 +212,6 @@ def load_multi_domain_datasets(
 def format_dataset_texts(
     items: List[Dict[str, Any]], dataset_type: str = "medqa", question_only: bool = False
 ) -> List[str]:
-    """Format dataset items to question+answer or question-only text."""
     formatted: List[str] = []
     for item in items:
         question = item.get("question", "")
