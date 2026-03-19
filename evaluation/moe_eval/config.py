@@ -7,7 +7,6 @@ from typing import List, Optional
 
 @dataclass
 class EvalConfig:
-    """Configuration for evaluation."""
     eval_tasks: List[str]
     output_dir: Path
     cuda_devices: str = "0,1,2,3"
@@ -17,7 +16,6 @@ class EvalConfig:
     model_args: Optional[str] = None
 
 
-# Default evaluation tasks
 DEFAULT_EVAL_TASKS = [
     "mmlu",
     "arc_challenge",

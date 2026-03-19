@@ -1,4 +1,4 @@
-"""Command line interface for Mixtral evaluation."""
+"""Command line interface for evaluation."""
 
 import argparse
 import logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="MoE Model Evaluation - Evaluate models with lm-evaluation-harness"
+        description="MoE Model Evaluation"
     )
     parser.add_argument(
         "--model-path",
